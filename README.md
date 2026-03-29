@@ -24,7 +24,7 @@
 
 ## 2. Деплой на VPS с PM2
 
-Нужны **Git**, **Python 3.12+** (или 3.10+), **Node.js** (для PM2). Открытые порты снаружи **не обязательны**: бот сам ходит в Telegram и в 1С.
+Нужны **Git**, **Python 3.10+**, **Node.js** (для PM2). Порты наружу открывать не обязательно.
 
 ### Установка PM2 (один раз на сервере)
 
@@ -32,30 +32,60 @@
 npm install -g pm2
 ```
 
-### Развёртывание
+### Скрипты
+
+| Скрипт | Назначение |
+|--------|------------|
+| `scripts/deploy.sh` | Первый запуск: клон + venv + `pip` + `.env` из примера + PM2 |
+| `scripts/update.sh` | Обновление: `git pull` + `pip` + `pm2 restart` |
+
+Сделайте исполняемыми при необходимости: `chmod +x scripts/*.sh`
+
+**Вариант A — один раз с пустого VPS** (каталога ещё нет):
 
 ```bash
 sudo mkdir -p /var/www && sudo chown "$USER":"$USER" /var/www
+# скопируйте deploy.sh на сервер ИЛИ сделайте одноразовый clone только скрипта:
 cd /var/www
-git clone <url-репозитория> dizeo-1c-bot
-cd dizeo-1c-bot
-
-python3.12 -m venv .venv
-# или: python3 -m venv .venv
-.venv/bin/pip install -U pip
-.venv/bin/pip install -r requirements.txt
-
-cp .env.example .env
-nano .env   # токен, whitelist, URL 1С
-
-pm2 start ecosystem.config.cjs
-pm2 logs dizeo-1c-bot --lines 50
-pm2 save
-pm2 startup
-# выполните команду, которую выведет pm2 startup (часто с sudo)
+git clone --depth 1 https://github.com/ВАШ_ОРГ/dizeo-1c-bot.git dizeo-1c-bot-tmp
+./dizeo-1c-bot-tmp/scripts/deploy.sh https://github.com/ВАШ_ОРГ/dizeo-1c-bot.git /var/www/dizeo-1c-bot
+rm -rf dizeo-1c-bot-tmp
 ```
 
-Важно: **только один процесс** с этим ботом (`instances: 1` в `ecosystem.config.cjs`). Второй экземпляр даст `TelegramConflict`.
+Проще: **клон вручную**, затем установка из репозитория:
+
+```bash
+cd /var/www
+git clone https://github.com/ВАШ_ОРГ/dizeo-1c-bot.git
+cd dizeo-1c-bot
+./scripts/deploy.sh
+```
+
+`./scripts/deploy.sh` без аргументов создаёт `.venv`, ставит зависимости, копирует `.env.example` → `.env` при отсутствии `.env`, запускает или перезапускает PM2.
+
+**Вариант B — clone + путь одной командой:**
+
+```bash
+./scripts/deploy.sh https://github.com/ВАШ_ОРГ/dizeo-1c-bot.git /var/www/dizeo-1c-bot
+```
+
+После первого запуска отредактируйте `.env`, затем:
+
+```bash
+pm2 restart dizeo-1c-bot
+```
+
+Один раз на сервере: `pm2 startup` и выполните выведенную команду (часто с `sudo`).
+
+**Обновление после пуша в GitHub:**
+
+```bash
+/var/www/dizeo-1c-bot/scripts/update.sh
+```
+
+или `cd /var/www/dizeo-1c-bot && ./scripts/update.sh`
+
+Важно: **только один** процесс с этим ботом — иначе `TelegramConflict`.
 
 ### Полезные команды PM2
 
@@ -67,13 +97,15 @@ pm2 stop dizeo-1c-bot
 pm2 delete dizeo-1c-bot
 ```
 
-### Обновление после `git pull`
+### Развёртывание вручную (без скриптов)
 
 ```bash
-cd /var/www/dizeo-1c-bot
-git pull
-.venv/bin/pip install -r requirements.txt
-pm2 restart dizeo-1c-bot
+cd /var/www
+git clone <url> dizeo-1c-bot && cd dizeo-1c-bot
+python3 -m venv .venv
+.venv/bin/pip install -U pip && .venv/bin/pip install -r requirements.txt
+cp .env.example .env && nano .env
+pm2 start ecosystem.config.cjs && pm2 save && pm2 startup
 ```
 
 ## 3. Локальный запуск
@@ -87,7 +119,7 @@ cp .env.example .env
 python -m app.main
 ```
 
-Или из Cursor / VS Code: конфиг **Run and Debug** «1C RKO Telegram bot» (см. `.vscode/launch.json`).
+Или из Cursor / VS Code: **Run and Debug** «1C RKO Telegram bot» (`.vscode/launch.json`).
 
 ### Локально через PM2
 
@@ -99,20 +131,22 @@ pm2 start ecosystem.config.cjs
 
 - `app/main.py` — точка входа, long polling, снятие webhook
 - `ecosystem.config.cjs` — конфиг PM2 для VPS
+- `scripts/deploy.sh` — первичный деплой
+- `scripts/update.sh` — обновление с Git (`pull`, `pip`, `pm2 restart`)
 - `app/handlers/` — команды и сообщения
 - `app/services/rko_service.py` — форматирование списка РКО
 - `app/clients/one_c_client.py` — HTTP-клиент к 1С
 
 ## 5. Docker (по желанию)
 
-Для long polling Docker не обязателен: достаточно venv + PM2. Если всё же нужен контейнер, в репозитории остаются `Dockerfile` и `docker-compose.yml`; запуск аналогичен обычному Python-образу (`python -m app.main`).
+Для long polling Docker не обязателен: достаточно venv + PM2. В репозитории могут оставаться `Dockerfile` и `docker-compose.yml`.
 
 ## 6. Переход с webhook на polling
 
-Если у бота был зарегистрирован webhook, при старте выполнится `delete_webhook`. Проверка:
+При старте выполнится `delete_webhook`. Проверка:
 
 ```bash
 curl -s "https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/getWebhookInfo"
 ```
 
-Должно быть `"url":""` после снятия webhook.
+Должно быть `"url":""`.
