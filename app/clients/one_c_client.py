@@ -2,6 +2,7 @@ import json
 import logging
 from decimal import Decimal
 from typing import Any
+from urllib.parse import quote, urljoin, urlsplit, urlunsplit
 
 import httpx
 
@@ -32,6 +33,20 @@ class OneCClient:
             auth=self._auth,
             timeout=self._timeout,
             follow_redirects=True,
+        )
+
+    @staticmethod
+    def _build_create_query(comment: str, sum_value: Decimal) -> str:
+        # 1C на этой стороне ожидает %20 для пробела, а не '+'.
+        encoded_comment = quote(comment, safe="")
+        encoded_sum = quote(str(sum_value), safe="")
+        return f"comment={encoded_comment}&sum={encoded_sum}"
+
+    @staticmethod
+    def _append_query(url: str, query: str) -> str:
+        parsed = urlsplit(url)
+        return urlunsplit(
+            (parsed.scheme, parsed.netloc, parsed.path, query, parsed.fragment)
         )
 
     async def get_cash_expense_orders(self, limit: int) -> dict[str, Any]:
@@ -75,7 +90,8 @@ class OneCClient:
         comment: str,
         sum_value: Decimal,
     ) -> str:
-        params = {"comment": comment, "sum": str(sum_value)}
+        query = self._build_create_query(comment, sum_value)
+        create_path = f"/cash-expense-orders?{query}"
         safe_log = "POST cash-expense-orders comment_len=%s sum=%s"
         logger.info(
             safe_log,
@@ -85,9 +101,28 @@ class OneCClient:
         try:
             async with self._client() as client:
                 r = await client.post(
-                    "/cash-expense-orders",
-                    params=params,
+                    create_path,
+                    follow_redirects=False,
                 )
+                if 300 <= r.status_code < 400:
+                    location = r.headers.get("location", "")
+                    if not location:
+                        logger.warning(
+                            "1C create got redirect without location: status=%s",
+                            r.status_code,
+                        )
+                        raise OneCClientError("redirect")
+                    redirected_url = urljoin(str(r.request.url), location)
+                    redirected_url = self._append_query(redirected_url, query)
+                    logger.info(
+                        "1C create redirect: status=%s -> POST %s",
+                        r.status_code,
+                        redirected_url,
+                    )
+                    r = await client.post(
+                        redirected_url,
+                        follow_redirects=False,
+                    )
         except httpx.TimeoutException as e:
             logger.warning("1C timeout on create")
             raise OneCClientError("timeout") from e
