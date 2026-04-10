@@ -15,7 +15,7 @@
 | `ONEC_BASE_URL` | Базовый URL сервера 1С (без учётных данных в URL) |
 | `ONEC_API_PATH` | Путь HTTP-сервиса, например `/1capi/hs/botapi` |
 | `ONEC_USERNAME` / `ONEC_PASSWORD` | Basic Auth к 1С |
-| `ONEC_TIMEOUT` | Таймаут HTTP к 1С (секунды) |
+| `ONEC_TIMEOUT` | Таймаут HTTP к 1С (секунды). После простоя первый запрос через Keenetic/https может занимать 15–30+ с — при малом значении будет «1С недоступна» |
 | `DEFAULT_LIMIT` | Лимит документов в списке РКО |
 
 Узнать свой `user_id`: [@userinfobot](https://t.me/userinfobot).

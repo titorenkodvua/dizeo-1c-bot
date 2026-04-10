@@ -21,7 +21,8 @@ class Settings(BaseSettings):
     onec_api_path: str = Field(..., alias="ONEC_API_PATH")
     onec_username: str = Field(..., alias="ONEC_USERNAME")
     onec_password: str = Field(..., alias="ONEC_PASSWORD")
-    onec_timeout: float = Field(default=20.0, alias="ONEC_TIMEOUT")
+    # После простоя Keenetic/HTTPS/редирект http→https часто дают 15–30+ с на первый запрос.
+    onec_timeout: float = Field(default=60.0, alias="ONEC_TIMEOUT")
     default_limit: int = Field(default=10, alias="DEFAULT_LIMIT")
 
     @field_validator("telegram_allowed_user_ids", mode="before")

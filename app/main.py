@@ -2,6 +2,7 @@ import asyncio
 import logging
 
 from aiogram import Bot, Dispatcher
+from aiogram.exceptions import TelegramNetworkError
 from aiogram.fsm.storage.memory import MemoryStorage
 
 from app.clients.one_c_client import OneCClient
@@ -47,10 +48,14 @@ async def run_bot() -> None:
     dp.include_router(start.router)
     dp.include_router(rko.router)
 
-    await bot.delete_webhook(drop_pending_updates=False)
-    logger.info("Webhook cleared (if any); long polling active")
-
     try:
+        try:
+            await bot.delete_webhook(drop_pending_updates=False, request_timeout=20)
+            logger.info("Webhook cleared (if any); long polling active")
+        except TelegramNetworkError as e:
+            # Не валим процесс: при сетевом лаге Telegram API polling обычно и так запускается.
+            logger.warning("Could not clear webhook on startup: %s", e)
+            logger.warning("Continue with long polling startup")
         await dp.start_polling(bot)
     finally:
         await bot.session.close()
